@@ -59,11 +59,8 @@ export default {
 				return;
 			}
 			chatHistory.push({ role: 'user', content: userMessage });
-			const client = new OpenAI({
-				baseURL: env.BASE_URL,
-				apiKey: '',
-			});
-			const aiReply = await aiChat(client, chatHistory);
+
+			const aiReply = await aiChat(env.BASE_URL, chatHistory);
 
 			if (aiReply) {
 				await ctx.reply(aiReply);
@@ -78,7 +75,11 @@ export default {
 	},
 };
 
-async function aiChat(client: OpenAI, messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]) {
+async function aiChat(baseUrl: string, messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]) {
+	const client = new OpenAI({
+		baseURL: baseUrl,
+		apiKey: '',
+	});
 	const response = await client.chat.completions.create({
 		model: 'RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8',
 		messages: [
