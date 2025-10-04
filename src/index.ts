@@ -34,10 +34,6 @@ export interface Env {
 
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-		const client = new OpenAI({
-			baseURL: env.BASE_URL,
-			apiKey: '',
-		});
 		const bot = new Bot(env.BOT_TOKEN, { botInfo: JSON.parse(env.BOT_INFO) });
 
 		bot.command('start', async (ctx: Context) => {
@@ -63,6 +59,10 @@ export default {
 				return;
 			}
 			chatHistory.push({ role: 'user', content: userMessage });
+			const client = new OpenAI({
+				baseURL: env.BASE_URL,
+				apiKey: '',
+			});
 			const aiReply = await aiChat(client, chatHistory);
 
 			if (aiReply) {
