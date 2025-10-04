@@ -74,7 +74,6 @@ export default {
 			}
 		});
 
-		// Xử lý webhook
 		return webhookCallback(bot, 'cloudflare-mod')(request);
 	},
 };
