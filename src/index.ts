@@ -29,7 +29,8 @@ export interface Env {
 	KV: KVNamespace;
 	BOT_INFO: string;
 	BOT_TOKEN: string;
-	BASE_URL: string;
+	AI_BASE_URL: string;
+	AI_API_KEY: string;
 }
 
 export default {
@@ -59,8 +60,11 @@ export default {
 				return;
 			}
 			chatHistory.push({ role: 'user', content: userMessage });
-
-			const aiReply = await aiChat(env.BASE_URL, chatHistory);
+			const client = new OpenAI({
+				baseURL: env.AI_BASE_URL,
+				apiKey: env.AI_API_KEY,
+			});
+			const aiReply = await aiChat(client, chatHistory);
 
 			if (aiReply) {
 				await ctx.reply(aiReply);
@@ -75,13 +79,9 @@ export default {
 	},
 };
 
-async function aiChat(baseUrl: string, messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]) {
-	const client = new OpenAI({
-		baseURL: baseUrl,
-		apiKey: '',
-	});
+async function aiChat(client: OpenAI, messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]) {
 	const response = await client.chat.completions.create({
-		model: 'RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8',
+		model: 'gpt-4.1-mini:free',
 		messages: [
 			{
 				role: 'system',
