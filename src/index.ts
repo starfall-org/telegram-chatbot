@@ -34,6 +34,7 @@ export default {
 		const bot = new Bot(env.BOT_TOKEN, { botInfo: JSON.parse(env.BOT_INFO) });
 
 		bot.command('start', async (ctx: Context) => {
+			await ctx.replyWithChatAction('typing');
 			await ctx.reply('Hello, world!');
 		});
 
