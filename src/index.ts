@@ -26,58 +26,77 @@ export interface Env {
 	//
 	// Example binding to a Queue. Learn more at https://developers.cloudflare.com/queues/javascript-apis/
 	// MY_QUEUE: Queue;
+	KV: KVNamespace;
 	BOT_INFO: string;
 	BOT_TOKEN: string;
+	BASE_URL: string;
 }
 
 const client = new OpenAI({
-	baseURL: 'https://orgcontributor--vllm-serve.modal.run/v1',
+	baseURL: process.env.BASE_URL,
 	apiKey: '',
 });
 
-async function aiChat(text: string) {
-	const response = await client.responses.create({
-		model: 'RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8',
-		instructions:
-			'Your name is AI Starfall, an AI assistant that helps users with a variety of tasks. You are friendly, knowledgeable, and always eager to assist. Keep your responses concise and to the point.',
-		input: text,
-	});
-	return response.output_text;
-}
+let bot: Bot;
 
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-		const bot = new Bot(env.BOT_TOKEN, { botInfo: JSON.parse(env.BOT_INFO) });
+		// Khởi tạo bot nếu chưa có
+		if (!bot) {
+			bot = new Bot(env.BOT_TOKEN, { botInfo: JSON.parse(env.BOT_INFO) });
+			
+			// Đăng ký các handlers
+			bot.command('start', async (ctx: Context) => {
+				await ctx.replyWithChatAction('typing');
+				await ctx.reply('Welcome to AI Starfall! How can I help you?');
+			});
 
-		bot.command('start', async (ctx: Context) => {
-			await ctx.replyWithChatAction('typing');
-			await ctx.reply(
-				'Welcome to AI Starfall!\n\nCurrently, the bot can not remember previous conversations. Please ask your questions directly.'
-			);
-		});
+			bot.on('message:text', async (ctx) => {
+				await ctx.replyWithChatAction('typing');
+				const chatHistoryString = (await env.KV.get(`${ctx.chat.id}`)) || '[]';
+				const chatHistory = JSON.parse(chatHistoryString);
+				if (chatHistory.length > 20) {
+					chatHistory.shift();
+				}
+				const userMessage = `${ctx.senderChat?.title || ctx.from.first_name}: ${ctx.message.text}`;
+				const botUsername = bot.botInfo.username;
+				if (
+					userMessage.startsWith('/') ||
+					(!userMessage.includes(botUsername) &&
+						ctx.message.chat.type !== 'private' &&
+						ctx.message.reply_to_message?.from?.username !== botUsername)
+				) {
+					return;
+				}
+				chatHistory.push({ role: 'user', content: userMessage });
+				const aiReply = await aiChat(chatHistory);
 
-		bot.on('message:text', async (ctx) => {
-			await ctx.replyWithChatAction('typing');
-			const userMessage = ctx.message.text;
-			const botUsername = bot.botInfo.username;
-			if (
-				userMessage.startsWith('/') ||
-				(!userMessage.includes(botUsername) &&
-					ctx.message.chat.type !== 'private' &&
-					ctx.message.reply_to_message?.from?.username !== botUsername)
-			) {
-				// Ignore commands
-				return;
-			}
-			const aiReply = await aiChat(userMessage);
+				if (aiReply) {
+					await ctx.reply(aiReply);
+					chatHistory.push({ role: 'assistant', content: aiReply });
+					await env.KV.put(`${ctx.chat.id}`, JSON.stringify(chatHistory));
+				} else {
+					await ctx.reply("I'm sorry, I couldn't generate a response at this time.");
+				}
+			});
+		}
 
-			if (aiReply) {
-				await ctx.reply(aiReply);
-			} else {
-				await ctx.reply("I'm sorry, I couldn't generate a response at this time.");
-			}
-		});
-
+		// Xử lý webhook
 		return webhookCallback(bot, 'cloudflare-mod')(request);
 	},
 };
+
+async function aiChat(messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]) {
+	const response = await client.chat.completions.create({
+		model: 'RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8',
+		messages: [
+			{
+				role: 'system',
+				content:
+					'Your name is AI Starfall, an AI assistant that helps users with a variety of tasks. You are friendly, knowledgeable, and always eager to assist. Keep your responses concise and to the point.',
+			},
+			...messages,
+		],
+	});
+	return response.choices[0]?.message?.content;
+}
