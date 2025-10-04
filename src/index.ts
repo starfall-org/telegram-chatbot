@@ -12,9 +12,6 @@ import { Bot, Context, webhookCallback } from 'grammy';
 import OpenAI from 'openai';
 
 export interface Env {
-	// Example binding to KV. Learn more at https://developers.cloudflare.com/workers/runtime-apis/kv/
-	// MY_KV_NAMESPACE: KVNamespace;
-	//
 	// Example binding to Durable Object. Learn more at https://developers.cloudflare.com/workers/runtime-apis/durable-objects/
 	// MY_DURABLE_OBJECT: DurableObjectNamespace;
 	//
@@ -26,7 +23,7 @@ export interface Env {
 	//
 	// Example binding to a Queue. Learn more at https://developers.cloudflare.com/queues/javascript-apis/
 	// MY_QUEUE: Queue;
-	KV: KVNamespace;
+	KV_BINDING: KVNamespace;
 	BOT_INFO: string;
 	BOT_TOKEN: string;
 	AI_BASE_URL: string;
@@ -43,22 +40,23 @@ export default {
 		});
 
 		bot.on('message:text', async (ctx) => {
-			await ctx.replyWithChatAction('typing');
-			const chatHistoryString = (await env.KV.get(`${ctx.chat.id}`)) || '[]';
-			const chatHistory = JSON.parse(chatHistoryString);
-			if (chatHistory.length > 20) {
-				chatHistory.shift();
-			}
-			const userMessage = `${ctx.senderChat?.title || ctx.from.first_name}: ${ctx.message.text}`;
 			const botUsername = bot.botInfo.username;
+			const messageText = ctx.message.text;
 			if (
-				userMessage.startsWith('/') ||
-				(!userMessage.includes(botUsername) &&
+				messageText.startsWith('/') ||
+				(!messageText.includes(botUsername) &&
 					ctx.message.chat.type !== 'private' &&
 					ctx.message.reply_to_message?.from?.username !== botUsername)
 			) {
 				return;
 			}
+			await ctx.replyWithChatAction('typing');
+			const chatHistoryString = (await env.KV_BINDING.get(`${ctx.chat.id}`)) || '[]';
+			const chatHistory = JSON.parse(chatHistoryString);
+			if (chatHistory.length > 50) {
+				chatHistory.shift();
+			}
+			const userMessage = `${ctx.senderChat?.title || ctx.from.first_name}: ${messageText}`;
 			chatHistory.push({ role: 'user', content: userMessage });
 			const client = new OpenAI({
 				baseURL: env.AI_BASE_URL,
@@ -69,7 +67,7 @@ export default {
 			if (aiReply) {
 				await ctx.reply(aiReply);
 				chatHistory.push({ role: 'assistant', content: aiReply });
-				await env.KV.put(`${ctx.chat.id}`, JSON.stringify(chatHistory));
+				await env.KV_BINDING.put(`${ctx.chat.id}`, JSON.stringify(chatHistory));
 			} else {
 				await ctx.reply("I'm sorry, I couldn't generate a response at this time.");
 			}

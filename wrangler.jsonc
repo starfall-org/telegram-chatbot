@@ -44,7 +44,7 @@
 	// "services": [{ "binding": "MY_SERVICE", "service": "my-service" }]
 	"kv_namespaces": [
 		{
-			"binding": "KV",
+			"binding": "KV_BINDING",
 			"id": "3901b74a7896471cb63ddb0ff440b54a"
 		}
 	]
