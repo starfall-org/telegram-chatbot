@@ -39,6 +39,21 @@ export default {
 			await ctx.reply('Welcome to AI Starfall! How can I help you?');
 		});
 
+		bot.command('help', async (ctx) => {
+			await ctx.replyWithChatAction('typing');
+			await ctx.reply(`Here are some commands you can try:\n\n/resetStorage - Reset your chat history.`);
+		});
+
+		bot.command('resetStorage', async (ctx) => {
+			await ctx.replyWithChatAction('typing');
+			if (ctx.chat.type === 'private') {
+				await env.KV_BINDING.delete(`${ctx.chat.id}`);
+				await ctx.reply('Your chat history has been reset.');
+			} else {
+				await ctx.reply('The /resetStorage command can only be used in private chats.');
+			}
+		});
+
 		bot.on('message:text', async (ctx) => {
 			const botUsername = bot.botInfo.username;
 			const messageText = ctx.message.text;
