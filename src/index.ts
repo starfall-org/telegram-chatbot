@@ -54,115 +54,111 @@ export default {
 			}
 		});
 
-		bot.on('message:text', async (ctx) => {
-			const botUsername = bot.botInfo.username;
-			const messageText = ctx.message.text;
+		bot.on('message:text').filter(
+			async (ctx) => {
+				return ctx.from?.is_bot === false && !ctx.message.text.startsWith('/');
+			},
+			async (ctx) => {
+				const botUsername = bot.botInfo.username;
+				const messageText = ctx.message.text;
 
-			// Ignore messages sent by bots (including this bot) to avoid processing
-			// the bot's own messages which can cause it to classify and delete
-			// its notification messages.
-			if (ctx.message.from?.is_bot) return;
-			// Also ignore messages that explicitly come from this bot's own account
-			// (some message types may not set is_bot reliably), using ctx.me.id.
-			if (ctx.message.from?.id === ctx.me.id) return;
-			// Ignore messages that were sent via this bot (covers via_bot cases).
-			if ((ctx.message as any).via_bot?.id === ctx.me.id) return;
+				// Create OpenAI client for spam detection and chat
+				const client = new OpenAI({
+					baseURL: env.AI_BASE_URL,
+					apiKey: env.AI_API_KEY,
+				});
 
-			// Create OpenAI client for spam detection and chat
-			const client = new OpenAI({
-				baseURL: env.AI_BASE_URL,
-				apiKey: env.AI_API_KEY,
-			});
-
-			// Check for spam/advertising using AI
-			let isSpam = false;
-			if (ctx.chat.type !== 'private') isSpam = await detectSpamWithAI(client, messageText);
-
-			if (isSpam) {
-				try {
-					// Load chat history to provide context for AI response
-					const chatHistoryString = (await env.KV_BINDING.get(`${ctx.chat.id}`)) || '[]';
-					const chatHistory = JSON.parse(chatHistoryString);
-
-					// Use sender chat title if present (channel post), otherwise the user's first name
-					const senderName = ctx.senderChat?.title || ctx.from?.first_name || 'Unknown';
-					// Add the spam message to history for context
-					const userMessage = `${senderName}: ${messageText}`;
-					chatHistory.push({ role: 'user', content: userMessage });
-
-					// Check if bot has admin permissions in group/supergroup
-					if (ctx.message.chat.type === 'group' || ctx.message.chat.type === 'supergroup') {
-						const botMember = await ctx.getChatMember(ctx.me.id);
-						const canDelete = botMember.status === 'administrator' && botMember.can_delete_messages;
-						const canBan = botMember.status === 'administrator' && botMember.can_restrict_members;
-						// If the message is sent on behalf of a channel (sender_chat), ctx.from may be undefined.
-						let isAdmin = false;
-						if (ctx.from?.id) {
-							const senderMember = await ctx.getChatMember(ctx.from.id);
-							isAdmin = senderMember.status === 'administrator' || senderMember.status === 'creator';
-						}
-
-						let actionTaken = '';
-						// Only delete and ban if the sender is not an admin and bot has ban permission
-						if (!isAdmin && canBan && ctx.from?.id) {
-							if (canDelete) {
-								await ctx.deleteMessage();
-								console.log('Deleted message', { chatId: ctx.chat.id, messageId: ctx.message.message_id, fromId: ctx.from.id });
-								actionTaken = 'deleted the message';
-							}
-							await ctx.banChatMember(ctx.from.id);
-							console.log('Banned user', { chatId: ctx.chat.id, userId: ctx.from.id });
-							actionTaken += actionTaken ? ' and banned the user' : 'banned the user';
-						} else if (isAdmin) {
-							actionTaken = 'detected spam from admin (no action taken)';
-						} else {
-							actionTaken = 'lacks permission to take action';
-
-							// Generate AI response about the action taken
-							const aiResponse = await generateSpamResponseWithAI(
-								client,
-								senderName,
-								actionTaken || 'detected spam but lacks permissions to take action',
-								canDelete || canBan
-							);
-							const notif = await ctx.reply(aiResponse);
-							console.log('Sent moderation notification', { chatId: ctx.chat.id, notifMessageId: (notif as any)?.message_id });
-							chatHistory.push({ role: 'assistant', content: aiResponse });
-							await env.KV_BINDING.put(`${ctx.chat.id}`, JSON.stringify(chatHistory));
-						}
-					}
-				} catch (error) {
-					console.error('Error handling spam:', error);
+				// Check for spam/advertising using AI
+				let isSpam = false;
+				if (ctx.chat.type !== 'private') {
+					isSpam = await detectSpamWithAI(client, messageText);
 				}
-				return;
-			}
 
-			if (
-				messageText.startsWith('/') ||
-				(!messageText.includes(botUsername) &&
+				if (isSpam) {
+					try {
+						// Load chat history to provide context for AI response
+						const chatHistoryString = (await env.KV_BINDING.get(`${ctx.chat.id}`)) || '[]';
+						const chatHistory = JSON.parse(chatHistoryString);
+
+						// Use sender chat title if present (channel post), otherwise the user's first name
+						const senderName = ctx.senderChat?.title || ctx.from?.first_name || 'Unknown';
+						// Add the spam message to history for context
+						const userMessage = `${senderName}: ${messageText}`;
+						chatHistory.push({ role: 'user', content: userMessage });
+
+						// Check if bot has admin permissions in group/supergroup
+						if (ctx.message.chat.type === 'group' || ctx.message.chat.type === 'supergroup') {
+							const botMember = await ctx.getChatMember(ctx.me.id);
+							const canDelete = botMember.status === 'administrator' && botMember.can_delete_messages;
+							const canBan = botMember.status === 'administrator' && botMember.can_restrict_members;
+							// If the message is sent on behalf of a channel (sender_chat), ctx.from may be undefined.
+							let isAdmin = false;
+							if (ctx.from?.id) {
+								const senderMember = await ctx.getChatMember(ctx.from.id);
+								isAdmin = senderMember.status === 'administrator' || senderMember.status === 'creator';
+							}
+
+							let actionTaken = '';
+							// Only delete and ban if the sender is not an admin and bot has ban permission
+							if (!isAdmin && canBan && ctx.from?.id) {
+								if (canDelete) {
+									await ctx.deleteMessage();
+									console.log('Deleted message', { chatId: ctx.chat.id, messageId: ctx.message.message_id, fromId: ctx.from.id });
+									actionTaken = 'deleted the message';
+								}
+								await ctx.banChatMember(ctx.from.id);
+								console.log('Banned user', { chatId: ctx.chat.id, userId: ctx.from.id });
+								actionTaken += actionTaken ? ' and banned the user' : 'banned the user';
+							} else if (isAdmin) {
+								actionTaken = 'detected spam from admin (no action taken)';
+							} else {
+								actionTaken = 'lacks permission to take action';
+
+								// Generate AI response about the action taken
+								const aiResponse = await generateSpamResponseWithAI(
+									client,
+									senderName,
+									actionTaken || 'detected spam but lacks permissions to take action',
+									canDelete || canBan
+								);
+								const notif = await ctx.reply(aiResponse);
+								console.log('Sent moderation notification', { chatId: ctx.chat.id, notifMessageId: (notif as any)?.message_id });
+								chatHistory.push({ role: 'assistant', content: aiResponse });
+								await env.KV_BINDING.put(`${ctx.chat.id}`, JSON.stringify(chatHistory));
+							}
+						}
+					} catch (error) {
+						console.error('Error handling spam:', error);
+					}
+					return;
+				}
+
+				if (
+					!ctx.message.text.includes(`@${botUsername}`) &&
 					ctx.message.chat.type !== 'private' &&
-					ctx.message.reply_to_message?.from?.username !== botUsername)
-			) {
-				return;
-			}
-			await ctx.replyWithChatAction('typing');
-			const chatHistoryString = (await env.KV_BINDING.get(`${ctx.chat.id}`)) || '[]';
-			const chatHistory = JSON.parse(chatHistoryString);
-			if (chatHistory.length > 50) {
-				chatHistory.shift();
-			}
-			const userMessage = `${ctx.senderChat?.title || ctx.from.first_name}: ${messageText}`;
-			chatHistory.push({ role: 'user', content: userMessage });
-			const aiReply = await aiChat(client, chatHistory);
+					ctx.message.reply_to_message?.from?.username !== ctx.me.username
+				)
+					return;
 
-			if (aiReply) {
-				await ctx.reply(aiReply);
-				chatHistory.push({ role: 'assistant', content: aiReply });
-				await env.KV_BINDING.put(`${ctx.chat.id}`, JSON.stringify(chatHistory));
-			} else {
-				await ctx.reply("I'm sorry, I couldn't generate a response at this time.");
+				await ctx.replyWithChatAction('typing');
+				const chatHistoryString = (await env.KV_BINDING.get(`${ctx.chat.id}`)) || '[]';
+				const chatHistory = JSON.parse(chatHistoryString);
+				if (chatHistory.length > 50) {
+					chatHistory.shift();
+				}
+				const userMessage = `${ctx.senderChat?.title || ctx.from.first_name}: ${messageText}`;
+				chatHistory.push({ role: 'user', content: userMessage });
+				const aiReply = await aiChat(client, chatHistory);
+
+				if (aiReply) {
+					await ctx.reply(aiReply);
+					chatHistory.push({ role: 'assistant', content: aiReply });
+					await env.KV_BINDING.put(`${ctx.chat.id}`, JSON.stringify(chatHistory));
+				} else {
+					await ctx.reply("I'm sorry, I couldn't generate a response at this time.");
+				}
 			}
-		});
+		);
 
 		return webhookCallback(bot, 'cloudflare-mod')(request);
 	},
