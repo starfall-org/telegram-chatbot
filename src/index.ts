@@ -10,6 +10,7 @@
 
 import { Bot, Context, webhookCallback } from 'grammy';
 import OpenAI from 'openai';
+import { detectSpamWithAI, aiChat } from './feature';
 
 export interface Env {
 	// Example binding to Durable Object. Learn more at https://developers.cloudflare.com/workers/runtime-apis/durable-objects/
@@ -56,7 +57,7 @@ export default {
 
 		bot.on('message:text').filter(
 			async (ctx) => {
-				return ctx.from?.is_bot === false && !ctx.message.text.startsWith('/');
+				return ctx.from?.id !== bot.botInfo.id;
 			},
 			async (ctx) => {
 				const botUsername = bot.botInfo.username;
@@ -70,11 +71,14 @@ export default {
 
 				// Check for spam/advertising using AI
 				let isSpam = false;
+				let banReason = '';
 				if (ctx.chat.type !== 'private') {
-					isSpam = await detectSpamWithAI(client, messageText);
+					const { is_spam, reason } = await detectSpamWithAI(client, messageText);
+					isSpam = is_spam;
+					banReason = reason || 'No reason provided';
 				}
 
-				if (isSpam) {
+				if (isSpam === true && ctx.chat.type !== 'private') {
 					try {
 						// Load chat history to provide context for AI response
 						const chatHistoryString = (await env.KV_BINDING.get(`${ctx.chat.id}`)) || '[]';
@@ -100,62 +104,57 @@ export default {
 
 							let actionTaken = '';
 							// Only delete and ban if the sender is not an admin and bot has ban permission
+							if (canDelete) {
+								await ctx.deleteMessage();
+								console.log('Deleted message', { chatId: ctx.chat.id, messageId: ctx.message.message_id, fromId: ctx.from.id });
+								actionTaken = 'deleted the message';
+							}
 							if (!isAdmin && canBan && ctx.from?.id) {
-								if (canDelete) {
-									await ctx.deleteMessage();
-									console.log('Deleted message', { chatId: ctx.chat.id, messageId: ctx.message.message_id, fromId: ctx.from.id });
-									actionTaken = 'deleted the message';
-								}
 								await ctx.banChatMember(ctx.from.id);
 								console.log('Banned user', { chatId: ctx.chat.id, userId: ctx.from.id });
 								actionTaken += actionTaken ? ' and banned the user' : 'banned the user';
 							} else if (isAdmin) {
 								actionTaken = 'detected spam from admin (no action taken)';
 							} else {
-								actionTaken = 'lacks permission to take action';
-
-								// Generate AI response about the action taken
-								const aiResponse = await generateSpamResponseWithAI(
-									client,
-									senderName,
-									actionTaken || 'detected spam but lacks permissions to take action',
-									canDelete || canBan
-								);
-								const notif = await ctx.reply(aiResponse);
-								console.log('Sent moderation notification', { chatId: ctx.chat.id, notifMessageId: (notif as any)?.message_id });
-								chatHistory.push({ role: 'assistant', content: aiResponse });
-								await env.KV_BINDING.put(`${ctx.chat.id}`, JSON.stringify(chatHistory));
+								actionTaken = 'no more action taken (insufficient permissions)';
 							}
+
+							// Generate AI response about the action taken
+							const quoteMessage = ctx.message.text.length > 100 ? ctx.message.text.slice(0, 100) + '...' : ctx.message.text;
+							const aiResponse =
+								`>${quoteMessage}\n\n` + `*User:* *"${ctx.from.first_name}"*.\n*Bot Action:* ${actionTaken}.\n*Reason:* ${banReason}`;
+							const notif = await bot.api.sendMessage(ctx.chat.id, aiResponse, { parse_mode: 'Markdown' });
+							console.log('Sent moderation notification', { chatId: ctx.chat.id, notifMessageId: (notif as any)?.message_id });
+							chatHistory.push({ role: 'assistant', content: aiResponse });
+							await env.KV_BINDING.put(`${ctx.chat.id}`, JSON.stringify(chatHistory));
 						}
 					} catch (error) {
 						console.error('Error handling spam:', error);
 					}
-					return;
-				}
-
-				if (
-					!ctx.message.text.includes(`@${botUsername}`) &&
-					ctx.message.chat.type !== 'private' &&
-					ctx.message.reply_to_message?.from?.username !== ctx.me.username
-				)
-					return;
-
-				await ctx.replyWithChatAction('typing');
-				const chatHistoryString = (await env.KV_BINDING.get(`${ctx.chat.id}`)) || '[]';
-				const chatHistory = JSON.parse(chatHistoryString);
-				if (chatHistory.length > 50) {
-					chatHistory.shift();
-				}
-				const userMessage = `${ctx.senderChat?.title || ctx.from.first_name}: ${messageText}`;
-				chatHistory.push({ role: 'user', content: userMessage });
-				const aiReply = await aiChat(client, chatHistory);
-
-				if (aiReply) {
-					await ctx.reply(aiReply);
-					chatHistory.push({ role: 'assistant', content: aiReply });
-					await env.KV_BINDING.put(`${ctx.chat.id}`, JSON.stringify(chatHistory));
 				} else {
-					await ctx.reply("I'm sorry, I couldn't generate a response at this time.");
+					if (
+						ctx.message.text.includes(`@${botUsername}`) ||
+						ctx.message.chat.type === 'private' ||
+						ctx.message.reply_to_message?.from?.username === ctx.me.username
+					) {
+						await ctx.replyWithChatAction('typing');
+						const chatHistoryString = (await env.KV_BINDING.get(`${ctx.chat.id}`)) || '[]';
+						const chatHistory = JSON.parse(chatHistoryString);
+						if (chatHistory.length > 50) {
+							chatHistory.shift();
+						}
+						const userMessage = `${ctx.senderChat?.title || ctx.from.first_name}: ${messageText}`;
+						chatHistory.push({ role: 'user', content: userMessage });
+						const aiReply = await aiChat(client, chatHistory);
+
+						if (aiReply) {
+							await ctx.reply(aiReply);
+							chatHistory.push({ role: 'assistant', content: aiReply });
+							await env.KV_BINDING.put(`${ctx.chat.id}`, JSON.stringify(chatHistory));
+						} else {
+							await ctx.reply("I'm sorry, I couldn't generate a response at this time.");
+						}
+					}
 				}
 			}
 		);
@@ -163,92 +162,3 @@ export default {
 		return webhookCallback(bot, 'cloudflare-mod')(request);
 	},
 };
-
-async function generateSpamResponseWithAI(client: OpenAI, userName: string, actionTaken: string, hasPermissions: boolean): Promise<string> {
-	try {
-		const response = await client.chat.completions.create({
-			model: 'gpt-4.1-mini:free',
-			messages: [
-				{
-					role: 'system',
-					content: `You are AI Starfall, a helpful AI assistant. Generate a brief, professional message to inform the group about spam detection and moderation actions taken.
-					
-Keep the message:
-- Brief and to the point (1-2 sentences)
-- Professional but friendly
-- Include a warning emoji (⚠️)
-- Mention the user's name
-- Explain what action was taken (or that you lack permissions)`,
-				},
-				{
-					role: 'user',
-					content: `Generate a message informing that spam was detected from user "${userName}". Action taken: ${actionTaken}. ${
-						hasPermissions ? 'I have permissions and took action.' : 'I do not have sufficient permissions.'
-					}`,
-				},
-			],
-			temperature: 0.7,
-			max_tokens: 100,
-		});
-
-		return response.choices[0]?.message?.content || '⚠️ Spam detected and handled.';
-	} catch (error) {
-		console.error('Error generating spam response with AI:', error);
-		// Fallback message if AI fails
-		return `⚠️ Spam detected from ${userName}. ${actionTaken}.`;
-	}
-}
-
-async function detectSpamWithAI(client: OpenAI, messageText: string): Promise<boolean> {
-	try {
-		const response = await client.chat.completions.create({
-			model: 'gpt-4.1-mini:free',
-			messages: [
-				{
-					role: 'system',
-					content: `You are a spam detection system. Analyze the message and determine if it contains spam, advertising, or promotional content.
-					
-Consider the following as spam:
-- Promotional/advertising content
-- Links to dubious websites or shortened URLs
-- Get-rich-quick schemes
-- Casino/gambling promotions
-- Cryptocurrency scams
-- Adult/inappropriate content advertisements
-- Repetitive messages with links
-- Excessive use of emojis with promotional intent
-- Messages trying to sell products or services
-
-Respond with ONLY "YES" if it's spam, or "NO" if it's legitimate content. Do not provide any explanation.`,
-				},
-				{
-					role: 'user',
-					content: messageText,
-				},
-			],
-			temperature: 0.1,
-			max_tokens: 10,
-		});
-
-		const result = response.choices[0]?.message?.content?.trim().toUpperCase();
-		return result === 'YES';
-	} catch (error) {
-		console.error('Error detecting spam with AI:', error);
-		return false; // If AI fails, don't block the message
-	}
-}
-
-async function aiChat(client: OpenAI, messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]) {
-	const response = await client.chat.completions.create({
-		model: 'gpt-4.1-mini:free',
-		messages: [
-			{
-				role: 'system',
-				content:
-					'Your name is AI Starfall, an AI assistant that helps users with a variety of tasks. You are friendly, knowledgeable, and always eager to assist. Keep your responses concise and to the point.',
-			},
-			...messages,
-		],
-	});
-	return response.choices[0]?.message?.content;
-}
