@@ -34,6 +34,10 @@ export interface Env {
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const bot = new Bot(env.BOT_TOKEN, { botInfo: JSON.parse(env.BOT_INFO) });
+		const client = new OpenAI({
+			baseURL: env.AI_BASE_URL,
+			apiKey: env.AI_API_KEY,
+		});
 
 		bot.command('start', async (ctx: Context) => {
 			await ctx.replyWithChatAction('typing');
@@ -54,31 +58,15 @@ export default {
 				await ctx.reply('The /resetStorage command can only be used in private chats.');
 			}
 		});
-
-		bot.on('message:text').filter(
+		bot.on('message').filter(
 			async (ctx) => {
-				return ctx.from?.id !== bot.botInfo.id;
+				return ctx.from?.id !== bot.botInfo.id && ctx.chat.type !== 'private';
 			},
 			async (ctx) => {
-				const botUsername = bot.botInfo.username;
-				const messageText = ctx.message.text;
+				const messageText = ctx.message.text || ctx.message.caption || '';
+				const { is_spam, reason } = await detectSpamWithAI(client, messageText);
 
-				// Create OpenAI client for spam detection and chat
-				const client = new OpenAI({
-					baseURL: env.AI_BASE_URL,
-					apiKey: env.AI_API_KEY,
-				});
-
-				// Check for spam/advertising using AI
-				let isSpam = false;
-				let banReason = '';
-				if (ctx.chat.type !== 'private') {
-					const { is_spam, reason } = await detectSpamWithAI(client, messageText);
-					isSpam = is_spam;
-					banReason = reason || 'No reason provided';
-				}
-
-				if (isSpam === true && ctx.chat.type !== 'private') {
+				if (is_spam === true) {
 					try {
 						// Load chat history to provide context for AI response
 						const chatHistoryString = (await env.KV_BINDING.get(`${ctx.chat.id}`)) || '[]';
@@ -120,9 +108,9 @@ export default {
 							}
 
 							// Generate AI response about the action taken
-							const quoteMessage = ctx.message.text.length > 100 ? ctx.message.text.slice(0, 100) + '...' : ctx.message.text;
+							const quoteMessage = messageText.length > 100 ? messageText.slice(0, 100) + '...' : ctx.message.text;
 							const aiResponse =
-								`>${quoteMessage}\n\n` + `*User:* *"${ctx.from.first_name}"*.\n*Bot Action:* ${actionTaken}.\n*Reason:* ${banReason}`;
+								`>${quoteMessage}\n\n` + `*User:* *"${ctx.from.first_name}"*.\n*Bot Action:* ${actionTaken}.\n*Reason:* ${reason}`;
 							const notif = await bot.api.sendMessage(ctx.chat.id, aiResponse, { parse_mode: 'Markdown' });
 							console.log('Sent moderation notification', { chatId: ctx.chat.id, notifMessageId: (notif as any)?.message_id });
 							chatHistory.push({ role: 'assistant', content: aiResponse });
@@ -131,30 +119,38 @@ export default {
 					} catch (error) {
 						console.error('Error handling spam:', error);
 					}
-				} else {
-					if (
-						ctx.message.text.includes(`@${botUsername}`) ||
-						ctx.message.chat.type === 'private' ||
-						ctx.message.reply_to_message?.from?.username === ctx.me.username
-					) {
-						await ctx.replyWithChatAction('typing');
-						const chatHistoryString = (await env.KV_BINDING.get(`${ctx.chat.id}`)) || '[]';
-						const chatHistory = JSON.parse(chatHistoryString);
-						if (chatHistory.length > 50) {
-							chatHistory.shift();
-						}
-						const userMessage = `${ctx.senderChat?.title || ctx.from.first_name}: ${messageText}`;
-						chatHistory.push({ role: 'user', content: userMessage });
-						const aiReply = await aiChat(client, chatHistory);
+				}
+			}
+		);
 
-						if (aiReply) {
-							await ctx.reply(aiReply);
-							chatHistory.push({ role: 'assistant', content: aiReply });
-							await env.KV_BINDING.put(`${ctx.chat.id}`, JSON.stringify(chatHistory));
-						} else {
-							await ctx.reply("I'm sorry, I couldn't generate a response at this time.");
-						}
-					}
+		bot.on('message:text').filter(
+			async (ctx) => {
+				const botUsername = bot.botInfo.username;
+				return (
+					ctx.message.text.includes(`@${botUsername}`) ||
+					ctx.message.chat.type === 'private' ||
+					ctx.message.reply_to_message?.from?.username === ctx.me.username
+				);
+			},
+			async (ctx) => {
+				const messageText = ctx.message.text;
+
+				await ctx.replyWithChatAction('typing');
+				const chatHistoryString = (await env.KV_BINDING.get(`${ctx.chat.id}`)) || '[]';
+				const chatHistory = JSON.parse(chatHistoryString);
+				if (chatHistory.length > 50) {
+					chatHistory.shift();
+				}
+				const userMessage = `${ctx.senderChat?.title || ctx.from.first_name}: ${messageText}`;
+				chatHistory.push({ role: 'user', content: userMessage });
+				const aiReply = await aiChat(client, chatHistory);
+
+				if (aiReply) {
+					await ctx.reply(aiReply);
+					chatHistory.push({ role: 'assistant', content: aiReply });
+					await env.KV_BINDING.put(`${ctx.chat.id}`, JSON.stringify(chatHistory));
+				} else {
+					await ctx.reply("I'm sorry, I couldn't generate a response at this time.");
 				}
 			}
 		);
