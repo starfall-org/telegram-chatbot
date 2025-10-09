@@ -100,9 +100,13 @@ export default {
 							let actionTaken = [];
 
 							if (canDelete) {
-								await ctx.deleteMessage();
-								console.log('Deleted message', { chatId: ctx.chat.id, messageId: ctx.message.message_id, fromId: ctx.from.id });
-								actionTaken.push('deleted the message');
+								try {
+									await ctx.deleteMessage();
+									console.log('Deleted message', { chatId: ctx.chat.id, messageId: ctx.message.message_id, fromId: ctx.from.id });
+									actionTaken.push('deleted the message');
+								} catch (e) {
+									console.log(e);
+								}
 							}
 							if (isAdmin) {
 								actionTaken.push('no ban (user is admin)');
