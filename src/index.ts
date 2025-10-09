@@ -35,7 +35,7 @@ export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const bot = new Bot(env.BOT_TOKEN, { botInfo: JSON.parse(env.BOT_INFO) });
 		const client = new OpenAI({
-			baseURL: 'https://gingdev-ollama-server.hf.space/v1',
+			baseURL: env.AI_BASE_URL,
 			apiKey: env.AI_API_KEY,
 		});
 
@@ -69,7 +69,7 @@ export default {
 			async (ctx) => {
 				return ctx.from?.id !== bot.botInfo.id && ctx.chat.type !== 'private';
 			},
-			async (ctx) => {
+			async (ctx, next) => {
 				const messageText = ctx.message.text || ctx.message.caption || '';
 				const { is_spam, reason } = await detectSpamWithAI(client, messageText);
 
@@ -111,7 +111,9 @@ export default {
 									await ctx.banChatSenderChat(ctx.senderChat.id);
 									actionTaken.push('banned the channel');
 								} else {
-									await ctx.banChatMember(ctx.from.id);
+									await ctx.restrictChatMember(ctx.from.id, {
+										can_send_messages: false,
+									});
 									actionTaken.push('banned the user');
 								}
 							}
@@ -144,16 +146,18 @@ export default {
 						console.error('Error handling spam:', error);
 					}
 				}
+
+				await next();
 			}
 		);
 
 		bot.on('message:text').filter(
 			async (ctx) => {
-				const botUsername = bot.botInfo.username;
+				const botUsername = ctx.me.username;
 				return (
 					ctx.message.text.includes(`@${botUsername}`) ||
 					ctx.message.chat.type === 'private' ||
-					ctx.message.reply_to_message?.from?.username === ctx.me.username
+					ctx.message.reply_to_message?.from?.id === ctx.me.id
 				);
 			},
 			async (ctx) => {

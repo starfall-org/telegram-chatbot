@@ -10,7 +10,7 @@ import { OpenAI } from 'openai';
 async function detectSpamWithAI(client: OpenAI, messageText: string): Promise<{ is_spam: boolean; reason?: string }> {
 	try {
 		const response = await client.chat.completions.create({
-			model: 'qwen2.5-coder:0.5b',
+			model: 'gemma3:270m',
 			messages: [
 				{
 					role: 'system',
@@ -26,12 +26,6 @@ Consider the following as spam:
 - Repetitive messages with links
 - Excessive use of emojis with promotional intent
 - Messages trying to sell products or services
-- Unsolicited offers or requests for personal information
-- Phishing attempts
-- Scams involving fake investments or lottery winnings
-- Messages containing explicit or offensive language
-- Attempts to manipulate emotions through excessive use of emojis or words like "urgent"
-- Any other suspicious behavior that may indicate spam
 
 Respond with this format:
 - In the first line: respond with "YES" if it's spam, or "NO" if it's legitimate content.
@@ -53,7 +47,7 @@ Respond with this format:
 
 async function aiChat(client: OpenAI, messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]) {
 	const response = await client.chat.completions.create({
-		model: 'qwen2.5-coder:0.5b',
+		model: 'gemma3:270m',
 		messages: [
 			{
 				role: 'system',
