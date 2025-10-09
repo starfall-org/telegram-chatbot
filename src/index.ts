@@ -128,7 +128,7 @@ export default {
 							}
 
 							const senderName = escapeMarkdownV2(ctx.senderChat?.title || ctx.from?.first_name || 'Unknown');
-							const quoteText = messageText.length > 100 ? messageText.slice(0, 100) + '...' : messageText;
+							const quoteText = messageText.length > 100 ? messageText.slice(0, 100) + '\n. . .' : messageText;
 							const quoteMessage = formatQuote(quoteText);
 							const safeReason = escapeMarkdownV2(reason);
 							const safeActions = escapeMarkdownV2(actionTaken.join(', '));
