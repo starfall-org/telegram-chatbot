@@ -116,8 +116,9 @@ export default {
 								}
 							}
 
+							const senderName = ctx.senderChat?.title || ctx.from?.first_name || 'Unknown';
 							const quoteMessage = messageText.length > 100 ? messageText.slice(0, 100) + '...' : ctx.message.text;
-							const aiResponse = `> ${quoteMessage}\n*User:* "${ctx.from.first_name}"\n*Bot Action:* _${actionTaken.join(
+							const aiResponse = `> ${quoteMessage}\n*User:* "${senderName}"\n*Bot Action:* _${actionTaken.join(
 								', '
 							)}_\n*Reason:* _${reason}_`;
 							const notif = await bot.api.sendMessage(ctx.chat.id, aiResponse, { parse_mode: 'MarkdownV2' });
