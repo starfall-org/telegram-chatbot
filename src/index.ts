@@ -119,14 +119,21 @@ export default {
 							function escapeMarkdownV2(text = '') {
 								return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
 							}
+							function formatQuote(text = '') {
+								const escaped = escapeMarkdownV2(text);
+								return escaped
+									.split('\n')
+									.map((line) => `> ${line}`)
+									.join('\n');
+							}
 
 							const senderName = escapeMarkdownV2(ctx.senderChat?.title || ctx.from?.first_name || 'Unknown');
-							const quoteText = messageText.length > 500 ? messageText.slice(0, 500) + '...' : messageText;
-							const quoteMessage = escapeMarkdownV2(quoteText);
+							const quoteText = messageText.length > 100 ? messageText.slice(0, 100) + '...' : messageText;
+							const quoteMessage = formatQuote(quoteText);
 							const safeReason = escapeMarkdownV2(reason);
 							const safeActions = escapeMarkdownV2(actionTaken.join(', '));
 
-							const aiResponse = `> ${quoteMessage}\n*User:* "${senderName}"\n*Bot Action:* _${safeActions}_\n*Reason:* _${safeReason}_`;
+							const aiResponse = `${quoteMessage}\n*User:* "${senderName}"\n*Bot Action:* _${safeActions}_\n*Reason:* _${safeReason}_`;
 
 							const notif = await ctx.reply(aiResponse, { parse_mode: 'MarkdownV2' });
 							console.log('Sent moderation notification', { chatId: ctx.chat.id, notifMessageId: (notif as any)?.message_id });
