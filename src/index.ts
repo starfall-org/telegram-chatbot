@@ -133,7 +133,7 @@ export default {
 							const safeReason = escapeMarkdownV2(reason);
 							const safeActions = escapeMarkdownV2(actionTaken.join(', '));
 
-							const aiResponse = `${quoteMessage}\n*User:* "${senderName}"\n*Bot Action:* _${safeActions}_\n*Reason:* _${safeReason}_`;
+							const aiResponse = `${quoteMessage}\n*User:* *"${senderName}"*\n*Bot Action:* _${safeActions}_\n\n*_${safeReason}_*`;
 
 							const notif = await ctx.reply(aiResponse, { parse_mode: 'MarkdownV2' });
 							console.log('Sent moderation notification', { chatId: ctx.chat.id, notifMessageId: (notif as any)?.message_id });
