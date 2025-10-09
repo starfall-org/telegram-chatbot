@@ -34,10 +34,6 @@ export interface Env {
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const bot = new Bot(env.BOT_TOKEN, { botInfo: JSON.parse(env.BOT_INFO) });
-		const client = new OpenAI({
-			baseURL: env.AI_BASE_URL,
-			apiKey: env.AI_API_KEY,
-		});
 
 		bot.command('start', async (ctx: Context) => {
 			await ctx.replyWithChatAction('typing');
@@ -69,6 +65,10 @@ export default {
 				);
 			},
 			async (ctx) => {
+				const client = new OpenAI({
+					baseURL: env.AI_BASE_URL,
+					apiKey: env.AI_API_KEY,
+				});
 				const messageText = ctx.message.text;
 
 				await ctx.replyWithChatAction('typing');
