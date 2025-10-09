@@ -9,7 +9,7 @@ import { OpenAI } from 'openai';
 
 async function aiChat(client: OpenAI, messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]) {
 	const response = await client.chat.completions.create({
-		model: 'openai',
+		model: 'gpt-4.1-mini:free',
 		messages: [
 			{
 				role: 'system',
