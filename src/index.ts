@@ -35,7 +35,7 @@ export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const bot = new Bot(env.BOT_TOKEN, { botInfo: JSON.parse(env.BOT_INFO) });
 		const client = new OpenAI({
-			baseURL: env.AI_BASE_URL,
+			baseURL: 'https://gingdev-ollama-server.hf.space/v1',
 			apiKey: env.AI_API_KEY,
 		});
 
@@ -116,13 +116,19 @@ export default {
 								}
 							}
 
-							const senderName = ctx.senderChat?.title || ctx.from?.first_name || 'Unknown';
-							const quoteMessage = messageText.length > 100 ? messageText.slice(0, 100) + '...' : ctx.message.text;
-							const aiResponse = `> ${quoteMessage}\n*User:* "${senderName}"\n*Bot Action:* _${actionTaken.join(
-								', '
-							)}_\n*Reason:* _${reason}_`;
-							const notif = await bot.api.sendMessage(ctx.chat.id, aiResponse, { parse_mode: 'MarkdownV2' });
+							function escapeMarkdownV2(text = '') {
+								return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
+							}
 
+							const senderName = escapeMarkdownV2(ctx.senderChat?.title || ctx.from?.first_name || 'Unknown');
+							const quoteText = messageText.length > 500 ? messageText.slice(0, 500) + '...' : messageText;
+							const quoteMessage = escapeMarkdownV2(quoteText);
+							const safeReason = escapeMarkdownV2(reason);
+							const safeActions = escapeMarkdownV2(actionTaken.join(', '));
+
+							const aiResponse = `> ${quoteMessage}\n*User:* "${senderName}"\n*Bot Action:* _${safeActions}_\n*Reason:* _${safeReason}_`;
+
+							const notif = await ctx.reply(aiResponse, { parse_mode: 'MarkdownV2' });
 							console.log('Sent moderation notification', { chatId: ctx.chat.id, notifMessageId: (notif as any)?.message_id });
 							chatHistory.push({ role: 'assistant', content: aiResponse });
 							await env.KV_BINDING.put(`${ctx.chat.id}`, JSON.stringify(chatHistory));

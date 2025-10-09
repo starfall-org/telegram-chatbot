@@ -10,7 +10,7 @@ import { OpenAI } from 'openai';
 async function detectSpamWithAI(client: OpenAI, messageText: string): Promise<{ is_spam: boolean; reason?: string }> {
 	try {
 		const response = await client.chat.completions.create({
-			model: 'gpt-4.1-mini:free',
+			model: 'qwen2.5-coder:0.5b',
 			messages: [
 				{
 					role: 'system',
@@ -53,7 +53,7 @@ Respond with this format:
 
 async function aiChat(client: OpenAI, messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]) {
 	const response = await client.chat.completions.create({
-		model: 'gpt-4.1-mini:free',
+		model: 'qwen2.5-coder:0.5b',
 		messages: [
 			{
 				role: 'system',
