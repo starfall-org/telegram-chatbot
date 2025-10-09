@@ -58,6 +58,13 @@ export default {
 				await ctx.reply('The /resetStorage command can only be used in private chats.');
 			}
 		});
+
+		bot.command('test', async (ctx) => {
+			const messageText = ctx.message?.text.replace('/test', '').trim() || 'This is a test message to check for spam detection.';
+			const { is_spam, reason } = await detectSpamWithAI(client, messageText);
+			await ctx.reply(`Spam: ${is_spam}\nReason: ${reason}`);
+		});
+
 		bot.on('message').filter(
 			async (ctx) => {
 				return ctx.from?.id !== bot.botInfo.id && ctx.chat.type !== 'private';
@@ -90,28 +97,31 @@ export default {
 								isAdmin = senderMember.status === 'administrator' || senderMember.status === 'creator';
 							}
 
-							let actionTaken = '';
-							// Only delete and ban if the sender is not an admin and bot has ban permission
+							let actionTaken = [];
+
 							if (canDelete) {
 								await ctx.deleteMessage();
 								console.log('Deleted message', { chatId: ctx.chat.id, messageId: ctx.message.message_id, fromId: ctx.from.id });
-								actionTaken = 'deleted the message';
+								actionTaken.push('deleted the message');
 							}
-							if (!isAdmin && canBan && ctx.from?.id) {
-								await ctx.banChatMember(ctx.from.id);
-								console.log('Banned user', { chatId: ctx.chat.id, userId: ctx.from.id });
-								actionTaken += actionTaken ? ' and banned the user' : 'banned the user';
-							} else if (isAdmin) {
-								actionTaken = 'detected spam from admin (no action taken)';
-							} else {
-								actionTaken = 'no more action taken (insufficient permissions)';
+							if (isAdmin) {
+								actionTaken.push('no ban (user is admin)');
+							} else if (canBan) {
+								if (ctx.senderChat?.id) {
+									await ctx.banChatSenderChat(ctx.senderChat.id);
+									actionTaken.push('banned the channel');
+								} else {
+									await ctx.banChatMember(ctx.from.id);
+									actionTaken.push('banned the user');
+								}
 							}
 
-							// Generate AI response about the action taken
 							const quoteMessage = messageText.length > 100 ? messageText.slice(0, 100) + '...' : ctx.message.text;
-							const aiResponse =
-								`>${quoteMessage}\n\n` + `*User:* *"${ctx.from.first_name}"*.\n*Bot Action:* ${actionTaken}.\n*Reason:* ${reason}`;
-							const notif = await bot.api.sendMessage(ctx.chat.id, aiResponse, { parse_mode: 'Markdown' });
+							const aiResponse = `> ${quoteMessage}\n*User:* "${ctx.from.first_name}"\n*Bot Action:* _${actionTaken.join(
+								', '
+							)}_\n*Reason:* _${reason}_`;
+							const notif = await bot.api.sendMessage(ctx.chat.id, aiResponse, { parse_mode: 'MarkdownV2' });
+
 							console.log('Sent moderation notification', { chatId: ctx.chat.id, notifMessageId: (notif as any)?.message_id });
 							chatHistory.push({ role: 'assistant', content: aiResponse });
 							await env.KV_BINDING.put(`${ctx.chat.id}`, JSON.stringify(chatHistory));
@@ -141,7 +151,7 @@ export default {
 				if (chatHistory.length > 50) {
 					chatHistory.shift();
 				}
-				const userMessage = `${ctx.senderChat?.title || ctx.from.first_name}: ${messageText}`;
+				const userMessage = `USER: ${ctx.senderChat?.title || ctx.from.first_name}.\nMESSAGE: ${messageText}`;
 				chatHistory.push({ role: 'user', content: userMessage });
 				const aiReply = await aiChat(client, chatHistory);
 

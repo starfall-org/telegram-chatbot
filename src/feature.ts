@@ -9,9 +9,12 @@ import { OpenAI } from 'openai';
 
 async function detectSpamWithAI(client: OpenAI, messageText: string): Promise<{ is_spam: boolean; reason?: string }> {
 	try {
-		const response = await client.responses.create({
+		const response = await client.chat.completions.create({
 			model: 'gpt-4.1-mini:free',
-			instructions: `You are a spam detection system. Analyze the message and determine if it contains spam, advertising, or promotional content.
+			messages: [
+				{
+					role: 'system',
+					content: `You are a spam detection system. Analyze the message and determine if it contains spam, advertising, or promotional content.
 					
 Consider the following as spam:
 - Promotional/advertising content
@@ -23,20 +26,28 @@ Consider the following as spam:
 - Repetitive messages with links
 - Excessive use of emojis with promotional intent
 - Messages trying to sell products or services
+- Unsolicited offers or requests for personal information
+- Phishing attempts
+- Scams involving fake investments or lottery winnings
+- Messages containing explicit or offensive language
+- Attempts to manipulate emotions through excessive use of emojis or words like "urgent"
+- Any other suspicious behavior that may indicate spam
 
 Respond with this format:
 - In the first line: respond with "YES" if it's spam, or "NO" if it's legitimate content.
-- From second line: A brief explanation of your reasoning.`,
-			input: messageText,
+- From second line: A brief explanation of your reasoning. If it's not spam, just say "No reason provided".`,
+				},
+				{ role: 'user', content: messageText },
+			],
 		});
 
-		const resp = response.output_text.trim();
-		const result = resp?.split('\n')[0].trim().toUpperCase();
-		const reason = resp?.replace(result!, '').trim() || 'No reason provided';
-		return { is_spam: result === 'YES', reason };
+		const resp = response.choices[0]?.message?.content?.trim();
+		const result = resp?.split('\n')[0].trim()!;
+		const reason = resp?.replace(result, '').trim() || 'No reason provided';
+		return { is_spam: result.toUpperCase() === 'YES', reason };
 	} catch (error) {
 		console.error('Error detecting spam with AI:', error);
-		return { is_spam: false, reason: 'Failed to detect spam with AI' }; // If AI fails, don't block the message
+		return { is_spam: false, reason: `${error}` }; // If AI fails, don't block the message
 	}
 }
 
