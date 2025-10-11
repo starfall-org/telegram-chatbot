@@ -1,6 +1,7 @@
 import { Bot, Context, webhookCallback } from 'grammy';
 import { detector } from './detector';
 import { ChatMemberAdministrator } from 'grammy/types';
+import OpenAI from 'openai';
 
 export interface Env {
 	KV_BINDING: KVNamespace;
@@ -14,6 +15,10 @@ export interface Env {
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const bot = new Bot(env.BOT_TOKEN, { botInfo: JSON.parse(env.BOT_INFO) });
+		const client = new OpenAI({
+			baseURL: env.AI_BASE_URL,
+			apiKey: env.AI_API_KEY,
+		});
 
 		bot.command('start', async (ctx: Context) => {
 			await ctx.replyWithChatAction('typing');
@@ -127,14 +132,9 @@ export default {
 		bot.command('test', async (ctx) => {
 			await ctx.replyWithChatAction('typing');
 			const text = ctx.message!.text.replace('/test', '').trim();
-			const detection = await detector(
-				env.AI_API_KEY,
-				env.AI_BASE_URL,
-				env.AI_MODEL,
-				'No specific rules set, use general spam detection.',
-				'english',
-				[{ role: 'user', content: text || 'Congratulations! You have won a free iPhone! Click here to claim your prize.' }]
-			);
+			const detection = await detector(client, env.AI_MODEL, 'No specific rules set, use general spam detection.', 'english', [
+				{ role: 'user', content: text || 'Congratulations! You have won a free iPhone! Click here to claim your prize.' },
+			]);
 			await ctx.reply(`Is Spam: ${detection.isSpam}\nReason: ${detection.reason}`);
 		});
 
@@ -161,9 +161,7 @@ export default {
 				const messageText = ctx.message.text || ctx.message.caption || '';
 				await ctx.replyWithChatAction('typing');
 				if (!messageText) return;
-				const detection = await detector(env.AI_API_KEY, env.AI_BASE_URL, env.AI_MODEL, rules, language, [
-					{ role: 'user', content: messageText },
-				]);
+				const detection = await detector(client, env.AI_MODEL, rules, language, [{ role: 'user', content: messageText }]);
 				if (detection.isSpam) {
 					const actions = [];
 					if (canDeleteMessages) {
