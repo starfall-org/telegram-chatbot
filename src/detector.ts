@@ -8,12 +8,17 @@ import { OpenAI } from 'openai';
  */
 
 export async function detector(
-	client: OpenAI,
+	apiKey: string,
+	baseURL: string,
 	model: string,
 	rules: string,
 	language: string,
 	message: OpenAI.Chat.Completions.ChatCompletionMessageParam[]
 ) {
+	const client = new OpenAI({
+		baseURL: baseURL,
+		apiKey: apiKey,
+	});
 	const response = await client.chat.completions.create({
 		model: model,
 		messages: [

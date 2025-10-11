@@ -1,5 +1,4 @@
 import { Bot, Context, webhookCallback } from 'grammy';
-import OpenAI from 'openai';
 import { detector } from './detector';
 import { ChatMemberAdministrator } from 'grammy/types';
 
@@ -130,10 +129,6 @@ export default {
 				return ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
 			},
 			async (ctx) => {
-				const client = new OpenAI({
-					baseURL: env.AI_BASE_URL,
-					apiKey: env.AI_API_KEY,
-				});
 				const rules = (await env.KV_BINDING.get(`rules_${ctx.chat.id}`)) || 'No specific rules set, use general spam detection.';
 				const language = (await env.KV_BINDING.get(`language_${ctx.chat.id}`)) || 'english';
 				const punishment = (await env.KV_BINDING.get(`punishment_${ctx.chat.id}`)) || 'mute';
@@ -152,7 +147,9 @@ export default {
 				const messageText = ctx.message.text || ctx.message.caption || '';
 				await ctx.replyWithChatAction('typing');
 				if (!messageText) return;
-				const detection = await detector(client, env.AI_MODEL, rules, language, [{ role: 'user', content: messageText }]);
+				const detection = await detector(env.AI_API_KEY, env.AI_BASE_URL, env.AI_MODEL, rules, language, [
+					{ role: 'user', content: messageText },
+				]);
 				if (detection.isSpam) {
 					const actions = [];
 					if (canDeleteMessages) {
