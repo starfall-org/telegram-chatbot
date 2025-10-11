@@ -1,34 +1,14 @@
-/**
- * Welcome to Cloudflare Workers! This is your first worker.
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `npm run deploy` to publish your worker
- *
- * Learn more at https://developers.cloudflare.com/workers/
- */
-
 import { Bot, Context, webhookCallback } from 'grammy';
 import OpenAI from 'openai';
-import { detectSpamWithAI, aiChat } from './feature';
+import { detector } from './feature';
 
 export interface Env {
-	// Example binding to Durable Object. Learn more at https://developers.cloudflare.com/workers/runtime-apis/durable-objects/
-	// MY_DURABLE_OBJECT: DurableObjectNamespace;
-	//
-	// Example binding to R2. Learn more at https://developers.cloudflare.com/workers/runtime-apis/r2/
-	// MY_BUCKET: R2Bucket;
-	//
-	// Example binding to a Service. Learn more at https://developers.cloudflare.com/workers/runtime-apis/service-bindings/
-	// MY_SERVICE: Fetcher;
-	//
-	// Example binding to a Queue. Learn more at https://developers.cloudflare.com/queues/javascript-apis/
-	// MY_QUEUE: Queue;
 	KV_BINDING: KVNamespace;
 	BOT_INFO: string;
 	BOT_TOKEN: string;
 	AI_BASE_URL: string;
 	AI_API_KEY: string;
+	AI_MODEL: string;
 }
 
 export default {
@@ -37,56 +17,103 @@ export default {
 
 		bot.command('start', async (ctx: Context) => {
 			await ctx.replyWithChatAction('typing');
-			await ctx.reply('Welcome to AI Starfall! How can I help you?');
+			await ctx.reply(
+				`Hello ${
+					ctx.from!.first_name
+				}! Welcome to Anti-Spam Enforcement Service Bot! Invite this bot to your group and make it an admin to help keep your group safe from spam. Use /help to see available commands.`
+			);
 		});
 
 		bot.command('help', async (ctx) => {
 			await ctx.replyWithChatAction('typing');
-			await ctx.reply(`Here are some commands you can try:\n\n/resetStorage - Reset your chat history.`);
+			await ctx.reply(`Available commands:
+/start - Start the bot and see the welcome message.
+/help - Show this help message.
+/setRules - Set spam detection rules for the group (admin only).
+/setLanguage - Set the language for spam detection (admin only).
+/setPunishment - Set the punishment for detected spam (admin only).`);
 		});
 
-		bot.command('resetStorage', async (ctx) => {
-			await ctx.replyWithChatAction('typing');
-			if (ctx.chat.type === 'private') {
-				await env.KV_BINDING.delete(`${ctx.chat.id}`);
-				await ctx.reply('Your chat history has been reset.');
-			} else {
-				await ctx.reply('The /resetStorage command can only be used in private chats.');
-			}
-		});
-
-		bot.on('message:text').filter(
+		bot.command('setRules').filter(
 			async (ctx) => {
-				const botUsername = ctx.me.username;
-				return (
-					ctx.message.text.includes(`@${botUsername}`) ||
-					ctx.message.chat.type === 'private' ||
-					ctx.message.reply_to_message?.from?.id === ctx.me.id
-				);
+				const member = await ctx.getChatMember(ctx.from!.id);
+				return member.status === 'administrator' || (member.status === 'creator' && ctx.chat.type !== 'private');
+			},
+			async (ctx) => {
+				await ctx.replyWithChatAction('typing');
+				const rules = ctx.message!.text.replace('/setRules', '').trim();
+				if (!rules) {
+					await ctx.reply('Please provide rules after the command. Example: /setRules <your rules here>');
+					return;
+				}
+				await env.KV_BINDING.put(`rules_${ctx.chat.id}`, rules);
+				await ctx.reply('Spam detection rules have been updated.');
+			}
+		);
+
+		bot.command('setLanguage').filter(
+			async (ctx) => {
+				const member = await ctx.getChatMember(ctx.from!.id);
+				return member.status === 'administrator' || (member.status === 'creator' && ctx.chat.type !== 'private');
+			},
+			async (ctx) => {
+				await ctx.replyWithChatAction('typing');
+				const language = ctx.message!.text.replace('/setLanguage', '').trim().toLowerCase();
+				if (!language) {
+					await ctx.reply('Please provide a language after the command. Example: /setLanguage english');
+					return;
+				}
+				await env.KV_BINDING.put(`language_${ctx.chat.id}`, language);
+				await ctx.reply(`Spam detection language has been set to ${language}.`);
+			}
+		);
+
+		bot.command('setPunishment').filter(
+			async (ctx) => {
+				const member = await ctx.getChatMember(ctx.from!.id);
+				return member.status === 'administrator' || (member.status === 'creator' && ctx.chat.type !== 'private');
+			},
+			async (ctx) => {
+				await ctx.replyWithChatAction('typing');
+				const punishment = ctx.message!.text.replace('/setPunishment', '').trim().toLowerCase();
+				if (!['delete', 'mute', 'kick', 'ban'].includes(punishment)) {
+					await ctx.reply(
+						'Please provide a valid punishment after the command. Options are: delete, kick, ban. Example: /setPunishment delete'
+					);
+					return;
+				}
+				await env.KV_BINDING.put(`punishment_${ctx.chat.id}`, punishment);
+				await ctx.reply(`Punishment for detected spam has been set to ${punishment}.`);
+			}
+		);
+
+		bot.on('message').filter(
+			async (ctx) => {
+				return ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
 			},
 			async (ctx) => {
 				const client = new OpenAI({
 					baseURL: env.AI_BASE_URL,
 					apiKey: env.AI_API_KEY,
 				});
-				const messageText = ctx.message.text;
+				const rules = (await env.KV_BINDING.get(`rules_${ctx.chat.id}`)) || 'No specific rules set, use general spam detection.';
+				const language = (await env.KV_BINDING.get(`language_${ctx.chat.id}`)) || 'english';
+				const punishment = (await env.KV_BINDING.get(`punishment_${ctx.chat.id}`)) || 'mute';
+				const isAdmin = await ctx.getChatMember(ctx.from!.id).then((member) => ['administrator', 'creator'].includes(member.status));
+				const isBotAdmin = await ctx.getChatMember(ctx.me.id).then((member) => ['administrator', 'creator'].includes(member.status));
 
+				const messageText = ctx.message.text || ctx.message.caption || '';
 				await ctx.replyWithChatAction('typing');
-				const chatHistoryString = (await env.KV_BINDING.get(`${ctx.chat.id}`)) || '[]';
-				const chatHistory = JSON.parse(chatHistoryString);
-				if (chatHistory.length > 50) {
-					chatHistory.shift();
-				}
-				const userMessage = `USER: ${ctx.senderChat?.title || ctx.from.first_name}.\nMESSAGE: ${messageText}`;
-				chatHistory.push({ role: 'user', content: userMessage });
-				const aiReply = await aiChat(client, chatHistory);
-
-				if (aiReply) {
-					await ctx.reply(aiReply);
-					chatHistory.push({ role: 'assistant', content: aiReply });
-					await env.KV_BINDING.put(`${ctx.chat.id}`, JSON.stringify(chatHistory));
-				} else {
-					await ctx.reply("I'm sorry, I couldn't generate a response at this time.");
+				if (!messageText) return;
+				const detection = await detector(client, env.AI_MODEL, rules, language, [{ role: 'user', content: messageText }]);
+				if (detection.isSpam) {
+					const actions = [];
+					if (isAdmin) {
+						await ctx.reply(
+							`Message from ${ctx.from!.first_name} is detected as spam. Reason: ${detection.reason} (not punished as sender is admin)`
+						);
+						return;
+					}
 				}
 			}
 		);
