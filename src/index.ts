@@ -19,9 +19,9 @@ export default {
 		bot.command('start', async (ctx: Context) => {
 			await ctx.replyWithChatAction('typing');
 			await ctx.reply(
-				`Hello ${
+				`Hello *${
 					ctx.from!.first_name
-				}! Welcome to Anti-Spam Enforcement Service Bot! Invite this bot to your group and make it an admin to help keep your group safe from spam. Use /help to see available commands.`
+				}*!\n\nWelcome to *Anti-Spam Enforcement Service Bot*! Invite this bot to your group and make it an admin to help keep your group safe from spam. Use /help to see available commands.`
 			);
 
 			const userHistoryString = (await env.KV_BINDING.get(`user_${ctx.from!.id}`)) || '[]';
@@ -47,7 +47,7 @@ export default {
 							reply_markup: {
 								inline_keyboard: [
 									[{ text: 'Report to Group Admin', callback_data: `report_${ctx.from!.id}_${entry.chatId}` }],
-									[{ text: 'Request to StarChatter', url: `https://t.me/${ctx.me.username}?start=_tgr_5jNmpmUwZWRl` }],
+									[{ text: 'Request to StarChatter', url: `https://t.me/StarChatterBot?start=_tgr_g267HSQzMDZl` }],
 								],
 							},
 						}
@@ -58,7 +58,8 @@ export default {
 
 		bot.command('help', async (ctx) => {
 			await ctx.replyWithChatAction('typing');
-			await ctx.reply(`Available commands:
+			await ctx.reply(`*Available commands:*
+
 /start - Start the bot and see the welcome message.
 /help - Show this help message.
 /setRules - Set spam detection rules for the group (admin only).
@@ -210,7 +211,7 @@ export default {
 									reply_markup: {
 										inline_keyboard: [
 											[{ text: 'Report to Group Admin', callback_data: `report_${ctx.from!.id}_${ctx.chat.id}` }],
-											[{ text: 'Request to StarChatter', url: `https://t.me/${ctx.me.username}?start=_tgr_5jNmpmUwZWRl` }],
+											[{ text: 'Request to StarChatter', url: `https://t.me/StarChatterBot?start=_tgr_g267HSQzMDZl` }],
 										],
 									},
 								}

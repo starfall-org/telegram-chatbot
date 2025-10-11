@@ -4,7 +4,7 @@
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "telegram-chatbot",
+	"name": "ases",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-10-04",
 	"observability": {
@@ -26,7 +26,7 @@
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
 	 */
 	"vars": {
-		"BOT_INFO": "{\"id\": 7673233834, \"is_bot\": true, \"first_name\": \"Star Chatter\", \"username\": \"StarChatterBot\", \"can_join_groups\": true, \"can_read_all_group_messages\": true, \"supports_inline_queries\": false, \"can_connect_to_business\": false, \"has_main_web_app\": false }",
+		"BOT_INFO": "{\"id\": 8285131609, \"is_bot\": true, \"first_name\": \"Anti-Spam Enforcement Service\", \"username\": \"ASEService_bot\", \"can_join_groups\": true, \"can_read_all_group_messages\": true, \"supports_inline_queries\": false, \"can_connect_to_business\": false, \"has_main_web_app\": false }",
 	},
 	/**
 	 * Note: Use secrets to store sensitive data.
