@@ -266,7 +266,7 @@ export default {
 										await ctx.api.sendMessage(
 											admin.user.id,
 											`User ${ctx.from!.first_name} (${
-												ctx.from!.id
+												ctx.from!.username || ctx.from!.id
 											}) has reported to you that they believe they were mistakenly punished in your group (${
 												chatTitle || chatId
 											}). Please review the case.`
