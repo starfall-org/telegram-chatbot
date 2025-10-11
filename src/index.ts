@@ -21,7 +21,8 @@ export default {
 			await ctx.reply(
 				`Hello *${
 					ctx.from!.first_name
-				}*!\n\nWelcome to *Anti-Spam Enforcement Service Bot*! Invite this bot to your group and make it an admin to help keep your group safe from spam. Use /help to see available commands.`
+				}*!\n\nWelcome to *Anti-Spam Enforcement Service Bot*! Invite this bot to your group and make it an admin to help keep your group safe from spam. Use /help to see available commands.`,
+				{ parse_mode: 'MarkdownV2' }
 			);
 
 			const userHistoryString = (await env.KV_BINDING.get(`user_${ctx.from!.id}`)) || '[]';
@@ -44,6 +45,7 @@ export default {
 							'\n1. *Report to Group Admin:* I will contact the group admin to investigate the issue.' +
 							'\n2. *Request to StarChatter:* You can reach out to StarChatter for verify that message is not spam and I will remove the punishment.',
 						{
+							parse_mode: 'MarkdownV2',
 							reply_markup: {
 								inline_keyboard: [
 									[{ text: 'Report to Group Admin', callback_data: `report_${ctx.from!.id}_${entry.chatId}` }],
@@ -58,13 +60,16 @@ export default {
 
 		bot.command('help', async (ctx) => {
 			await ctx.replyWithChatAction('typing');
-			await ctx.reply(`*Available commands:*
+			await ctx.reply(
+				`*Available commands:*
 
 /start - Start the bot and see the welcome message.
 /help - Show this help message.
 /setRules - Set spam detection rules for the group (admin only).
 /setLanguage - Set the language for spam detection (admin only).
-/setPunishment - Set the punishment for detected spam (admin only).`);
+/setPunishment - Set the punishment for detected spam (admin only).`,
+				{ parse_mode: 'MarkdownV2' }
+			);
 		});
 
 		bot.command('setRules').filter(
@@ -207,7 +212,7 @@ export default {
 									'\n1. *Report to Group Admin:* I will contact the group admin to investigate the issue.' +
 									'\n2. *Request to StarChatter:* You can reach out to StarChatter for verify that message is not spam and I will remove the punishment.',
 								{
-									reply_to_message_id: ctx.message!.message_id,
+									parse_mode: 'MarkdownV2',
 									reply_markup: {
 										inline_keyboard: [
 											[{ text: 'Report to Group Admin', callback_data: `report_${ctx.from!.id}_${ctx.chat.id}` }],
