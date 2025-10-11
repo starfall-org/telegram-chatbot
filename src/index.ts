@@ -20,8 +20,8 @@ export default {
 			await ctx.reply(
 				`Hello *${
 					ctx.from!.first_name
-				}*!\n\nWelcome to *Anti-Spam Enforcement Service Bot*! Invite this bot to your group and make it an admin to help keep your group safe from spam. Use /help to see available commands.`,
-				{ parse_mode: 'MarkdownV2' }
+				}*.\n\nWelcome to *Anti-Spam Enforcement Service Bot*.\nInvite this bot to your group and make it an admin to help keep your group safe from spam. Use /help to see available commands.`,
+				{ parse_mode: 'Markdown' }
 			);
 
 			const userHistoryString = (await env.KV_BINDING.get(`user_${ctx.from!.id}`)) || '[]';
@@ -44,7 +44,7 @@ export default {
 							'\n1. *Report to Group Admin:* I will contact the group admin to investigate the issue.' +
 							'\n2. *Request to StarChatter:* You can reach out to StarChatter for verify that message is not spam and I will remove the punishment.',
 						{
-							parse_mode: 'MarkdownV2',
+							parse_mode: 'Markdown',
 							reply_markup: {
 								inline_keyboard: [
 									[{ text: 'Report to Group Admin', callback_data: `report_${ctx.from!.id}_${entry.chatId}` }],
@@ -67,7 +67,7 @@ export default {
 /setRules - Set spam detection rules for the group (admin only).
 /setLanguage - Set the language for spam detection (admin only).
 /setPunishment - Set the punishment for detected spam (admin only).`,
-				{ parse_mode: 'MarkdownV2' }
+				{ parse_mode: 'Markdown' }
 			);
 		});
 
@@ -123,6 +123,20 @@ export default {
 				await ctx.reply(`Punishment for detected spam has been set to ${punishment}.`);
 			}
 		);
+
+		bot.command('test', async (ctx) => {
+			await ctx.replyWithChatAction('typing');
+			const text = ctx.message!.text.replace('/test', '').trim();
+			const detection = await detector(
+				env.AI_API_KEY,
+				env.AI_BASE_URL,
+				env.AI_MODEL,
+				'No specific rules set, use general spam detection.',
+				'english',
+				[{ role: 'user', content: text || 'Congratulations! You have won a free iPhone! Click here to claim your prize.' }]
+			);
+			await ctx.reply(`Is Spam: ${detection.isSpam}\nReason: ${detection.reason}`);
+		});
 
 		bot.on('message').filter(
 			async (ctx) => {
@@ -209,7 +223,7 @@ export default {
 									'\n1. *Report to Group Admin:* I will contact the group admin to investigate the issue.' +
 									'\n2. *Request to StarChatter:* You can reach out to StarChatter for verify that message is not spam and I will remove the punishment.',
 								{
-									parse_mode: 'MarkdownV2',
+									parse_mode: 'Markdown',
 									reply_markup: {
 										inline_keyboard: [
 											[{ text: 'Report to Group Admin', callback_data: `report_${ctx.from!.id}_${ctx.chat.id}` }],
@@ -226,7 +240,7 @@ export default {
 					await ctx.reply(
 						`*Report:* User ${ctx.from!.first_name} (${ctx.from!.id}) was detected as spam and the bot ${actions.join(', ')}.`,
 						{
-							parse_mode: 'MarkdownV2',
+							parse_mode: 'Markdown',
 							reply_markup: { inline_keyboard: [[{ text: 'Report', url: `https://t.me/${ctx.me.username}?start=_tgr_5jNmpmUwZWRl` }]] },
 						}
 					);
