@@ -26,6 +26,7 @@ export default {
 
 			const userHistoryString = (await env.KV_BINDING.get(`user_${ctx.from!.id}`)) || '[]';
 			const userHistory = JSON.parse(userHistoryString) as Array<{
+				chatTitle: string;
 				chatId: number;
 				timestamp: number;
 				punishment: string;
@@ -175,6 +176,7 @@ export default {
 						if (['ban', 'mute'].includes(punishment) && canRestrictMembers && ctx.from!.id) {
 							const userHistoryString = (await env.KV_BINDING.get(`user_${ctx.from!.id}`)) || '[]';
 							const userHistory = JSON.parse(userHistoryString) as Array<{
+								chatTitle: string;
 								chatId: number;
 								timestamp: number;
 								punishment: string;
@@ -183,6 +185,7 @@ export default {
 								handled: boolean;
 							}>;
 							userHistory.push({
+								chatTitle: ctx.chat.title!,
 								chatId: ctx.chat.id,
 								timestamp: Date.now(),
 								punishment,
@@ -233,8 +236,19 @@ export default {
 			if (data && data.startsWith('report_')) {
 				const parts = data.split('_');
 				if (parts.length === 3) {
-					const userId = parseInt(parts[1], 10);
-					const chatId = parseInt(parts[2], 10);
+					const userId = parseInt(parts[1]);
+					const chatId = parseInt(parts[2]);
+					const userHistoryString = (await env.KV_BINDING.get(`user_${userId}`)) || '[]';
+					const userHistory = JSON.parse(userHistoryString) as Array<{
+						chatTitle: string;
+						chatId: number;
+						timestamp: number;
+						punishment: string;
+						content: string;
+						reason: string;
+						handled: boolean;
+					}>;
+					const chatTitle = userHistory.find((entry) => entry.chatId === chatId)?.chatTitle;
 					if (!isNaN(userId) && !isNaN(chatId)) {
 						try {
 							const chatAdmins = await ctx.api.getChatAdministrators(chatId);
@@ -247,7 +261,9 @@ export default {
 											admin.user.id,
 											`User ${ctx.from!.first_name} (${
 												ctx.from!.id
-											}) has reported to you that they believe they were mistakenly punished in your group (ID: ${chatId}). Please review the case.`
+											}) has reported to you that they believe they were mistakenly punished in your group (${
+												chatTitle || chatId
+											}). Please review the case.`
 										);
 										knownAdmins.push(admin);
 									} catch (e) {
@@ -260,7 +276,7 @@ export default {
 							if (notKnowAdmins.length === chatAdmins.length) {
 								await ctx.api.sendMessage(
 									ctx.from!.id,
-									`Sorry, I couldn't contact any admins in the group (ID: ${chatId}) because they haven't started a chat with me. Please ask the group admins to start a chat with me first.`
+									`Sorry, I couldn't contact any admins in the group (ID: ${chatId}) because they haven't started a chat with me. Please use second method.`
 								);
 							} else {
 								let adminNames = knownAdmins.map((admin) => admin.user.first_name).join(', ');
